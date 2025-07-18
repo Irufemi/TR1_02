@@ -19,20 +19,18 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
     char preKeys[256] = { 0 };
 
     const std::string spreadsheetId = "1fL9it6HK4IsAzmViTchDWWG5koE7nbxEfSYKjx6VFM8";
-    const std::string sheetNameRange = "sheet2!A1:F5";
+    const std::string sheetNameRange = "sheet2";
     const std::string apiKey = "AIzaSyAXQOKxJEPBPtuw8kyp0MZIGsQzhrVBzkc";
-    const std::string jsonCacheFile = "map_data.json";
 
     MapManager mapMgr(
         spreadsheetId,  // スプレッドシートID
         sheetNameRange, // 範囲
         apiKey,       // APIキー
-        jsonCacheFile,  // キャッシュファイル
         20,   // タイルサイズ
         30   // Yオフセット
     );
 
-    mapMgr.Initialize();
+    mapMgr.Initialize(1,1);
 
     // ウィンドウの×ボタンが押されるまでループ
     while (Novice::ProcessMessage() == 0) {
@@ -47,7 +45,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         /// ↓更新処理ここから
         ///
 
-        mapMgr.Update(keys, preKeys);
+        mapMgr.Update(keys, preKeys,1,1);
 
         ///
         /// ↑更新処理ここまで

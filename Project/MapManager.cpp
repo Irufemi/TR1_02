@@ -1,83 +1,82 @@
 #include "MapManager.h"
-
-#include <Novice.h>
-
-#include <curl/curl.h>
-#include <nlohmann/json.hpp>
 #include <fstream>
-#include <filesystem>
 #include <iostream>
 
-using json = nlohmann::json;
-
 MapManager::MapManager(const std::string& spreadsheetId,
-    const std::string& sheetRange,
+    const std::string& sheetName,
     const std::string& apiKey,
-    const std::string& cacheFile,
     int tileSize,
-    int yOffset)
+    int yOffset,
+    int viewDistanceChunks)
     : spreadsheetId_(spreadsheetId)
-    , sheetRange_(sheetRange)
+    , sheetName_(sheetName)
     , apiKey_(apiKey)
-    , cacheFile_(cacheFile)
     , tileSize_(tileSize)
-    , yOffset_(yOffset) {
+    , yOffset_(yOffset)
+    , viewDistanceChunks_(viewDistanceChunks) {
 }
 
 MapManager::~MapManager() {
     curl_global_cleanup();
 }
 
-void MapManager::Initialize() {
+void MapManager::Initialize(int startPlayerTileX, int startPlayerTileY) {
     curl_global_init(CURL_GLOBAL_ALL);
     isOnline_ = CheckOnlineStatus();
-    if (isOnline_) {
-        mapData_ = LoadFromSheet();
-        SaveToJson(mapData_);
-    } else {
-        mapData_ = LoadFromJson();
-    }
-}
-
-void MapManager::Update(const char keys[256], const char preKeys[256]) {
-    // Oキーでオンライン切替
-    if (keys[DIK_O] && !preKeys[DIK_O]) {
-        isOnline_ = CheckOnlineStatus();
-    }
-    // Uキーで更新
-    if (keys[DIK_U] && !preKeys[DIK_U]) {
-        if (isOnline_) {
-            mapData_ = LoadFromSheet();
-            SaveToJson(mapData_);
-        } else {
-            mapData_ = LoadFromJson();
+    int cx = startPlayerTileX / kChunkWidth;
+    int cy = startPlayerTileY / kChunkHeight;
+    for (int dy = -viewDistanceChunks_; dy <= viewDistanceChunks_; ++dy) {
+        for (int dx = -viewDistanceChunks_; dx <= viewDistanceChunks_; ++dx) {
+            EnqueueChunkLoad(cx + dx, cy + dy);
         }
     }
 }
 
+void MapManager::Update(const char keys[256], const char preKeys[256], int playerTileX, int playerTileY) {
+    if (keys[DIK_O] && !preKeys[DIK_O]) {
+        isOnline_ = CheckOnlineStatus();
+    }
+    if (keys[DIK_U] && !preKeys[DIK_U]) {
+        chunks_.clear();
+    }
+    int cx = playerTileX / kChunkWidth;
+    int cy = playerTileY / kChunkHeight;
+    for (int dy = -viewDistanceChunks_; dy <= viewDistanceChunks_; ++dy) {
+        for (int dx = -viewDistanceChunks_; dx <= viewDistanceChunks_; ++dx) {
+            EnqueueChunkLoad(cx + dx, cy + dy);
+        }
+    }
+    for (auto it = chunks_.begin(); it != chunks_.end();) {
+        int dx = it->first.first - cx;
+        int dy = it->first.second - cy;
+        if (abs(dx) > viewDistanceChunks_ || abs(dy) > viewDistanceChunks_) {
+            it = chunks_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    PollLoadedChunks();
+}
+
 void MapManager::Draw() const {
-    // オンライン状態表示
     Novice::ScreenPrintf(10, 10, isOnline_ ? "Online" : "Offline");
-    // マップ描画
-    for (int y = 0; y < static_cast<int>(mapData_.size()); ++y) {
-        for (int x = 0; x < static_cast<int>(mapData_[y].size()); ++x) {
-            int tile = mapData_[y][x];
-            switch (tile) {
-            case 1:
-                Novice::DrawBox(x * tileSize_, 30 + y * tileSize_, tileSize_, tileSize_, 0, BLUE, kFillModeSolid);
-                break;
-            case 2:
-                Novice::DrawBox(x * tileSize_, 30 + y * tileSize_, tileSize_, tileSize_, 0, RED, kFillModeSolid);
-                break;
-            default:
-                break;
+    for (const auto& kv : chunks_) {
+        const auto& chunk = kv.second;
+        if (!chunk.loaded) continue;
+        for (int y = 0; y < (int)chunk.tiles.size(); ++y) {
+            for (int x = 0; x < (int)chunk.tiles[y].size(); ++x) {
+                int tile = chunk.tiles[y][x];
+                int screenX = (chunk.chunkX * kChunkWidth + x) * tileSize_;
+                int screenY = (chunk.chunkY * kChunkHeight + y) * tileSize_ + yOffset_;
+                if (tile == 1) Novice::DrawBox(screenX, screenY, tileSize_, tileSize_, 0, BLUE, kFillModeSolid);
+                if (tile == 2) Novice::DrawBox(screenX, screenY, tileSize_, tileSize_, 0, RED, kFillModeSolid);
             }
         }
     }
 }
 
 size_t MapManager::WriteCallback(void* contents, size_t size, size_t nmemb, void* userp) {
-    auto realSize = size * nmemb;
+    size_t realSize = size * nmemb;
     std::string* buffer = static_cast<std::string*>(userp);
     buffer->append(static_cast<char*>(contents), realSize);
     return realSize;
@@ -94,54 +93,96 @@ bool MapManager::CheckOnlineStatus() const {
     return res == CURLE_OK;
 }
 
-std::vector<std::vector<int>> MapManager::LoadFromSheet() const {
+std::string MapManager::ColIndexToName(int index) {
+    std::string name;
+    while (index >= 0) {
+        int rem = index % 26;
+        name.insert(name.begin(), static_cast<char>('A' + rem));
+        index = index / 26 - 1;
+    }
+    return name;
+}
+
+TileData MapManager::LoadFromSheet(int cx, int cy) const {
     std::vector<std::vector<int>> data;
     CURL* curl = curl_easy_init();
-    std::string readBuffer;
+    std::string buffer;
     if (curl) {
+        std::string startC = ColIndexToName(cx * kChunkWidth);
+        std::string endC = ColIndexToName(cx * kChunkWidth + (kChunkWidth - 1));
+        int startR = cy * kChunkHeight + 1;
+        int endR = startR + (kChunkHeight - 1);
+        std::string range = sheetName_ + "!" + startC + std::to_string(startR)
+            + ":" + endC + std::to_string(endR);
         std::string url = "https://sheets.googleapis.com/v4/spreadsheets/" + spreadsheetId_
-            + "/values/" + sheetRange_ + "?key=" + apiKey_;
+            + "/values/" + range + "?key=" + apiKey_;
         curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
-        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &readBuffer);
-        CURLcode res = curl_easy_perform(curl);
-        curl_easy_cleanup(curl);
-        if (res == CURLE_OK) {
-            try {
-                auto j = json::parse(readBuffer);
-                for (auto& row : j["values"]) {
-                    std::vector<int> rowData;
-                    for (auto& cell : row) {
-                        rowData.push_back(std::stoi(cell.get<std::string>()));
-                    }
-                    data.push_back(rowData);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buffer);
+        if (curl_easy_perform(curl) == CURLE_OK) {
+            auto j = json::parse(buffer);
+            for (auto& row : j["values"]) {
+                std::vector<int> rowData;
+                for (auto& cell : row) {
+                    rowData.push_back(std::stoi(cell.get<std::string>()));
                 }
-            }
-            catch (const std::exception& e) {
-                std::cerr << "JSON parse error: " << e.what() << std::endl;
+                data.push_back(rowData);
             }
         }
+        curl_easy_cleanup(curl);
     }
     return data;
 }
 
-std::vector<std::vector<int>> MapManager::LoadFromJson() const {
-    std::vector<std::vector<int>> data;
-    if (!std::filesystem::exists(cacheFile_)) return data;
-    std::ifstream ifs(cacheFile_);
-    if (ifs) {
-        json j;
-        ifs >> j;
-        if (j.contains("values")) {
-            data = j["values"].get<std::vector<std::vector<int>>>();
-        }
-    }
+TileData MapManager::LoadChunkCache(int cx, int cy) const {
+    TileData data;
+    std::string filename = "chunk_" + std::to_string(cx) + "_" + std::to_string(cy) + ".json";
+    if (!std::filesystem::exists(filename)) return data;
+    std::ifstream ifs(filename);
+    json j; ifs >> j;
+    data = j.get<TileData>();
     return data;
 }
 
-void MapManager::SaveToJson(const std::vector<std::vector<int>>& data) const {
-    json j;
-    j["values"] = data;
-    std::ofstream ofs(cacheFile_);
-    ofs << j.dump();
+void MapManager::SaveChunkCache(int cx, int cy, const TileData& data) const {
+    std::string filename = "chunk_" + std::to_string(cx) + "_" + std::to_string(cy) + ".json";
+    std::ofstream ofs(filename);
+    ofs << json(data).dump();
+}
+
+void MapManager::EnqueueChunkLoad(int cx, int cy) {
+    auto key = std::make_pair(cx, cy);
+    auto& chunk = chunks_[key];
+    if (chunk.loaded || chunk.loaderFuture.valid()) return;
+    chunk.chunkX = cx;
+    chunk.chunkY = cy;
+    if (isOnline_) {
+        chunk.loaderFuture = std::async(std::launch::async, [this, cx, cy]() {
+            return LoadFromSheet(cx, cy);
+            });
+    } else {
+        chunk.loaderFuture = std::async(std::launch::async, [this, cx, cy]() {
+            return LoadChunkCache(cx, cy);
+            });
+    }
+}
+
+void MapManager::PollLoadedChunks() {
+    for (auto& kv : chunks_) {
+        auto& chunk = kv.second;
+        // 既に読み込み済み、あるいはまだタスクを開始していなければスキップ
+        if (chunk.loaded || !chunk.loaderFuture.valid()) continue;
+
+        // 非同期読み込みタスクの完了チェック
+        if (chunk.loaderFuture.wait_for(std::chrono::milliseconds(0))
+            == std::future_status::ready) {
+            // 結果を取り出す
+            TileData data = chunk.loaderFuture.get();
+            // キャッシュファイルに保存
+            SaveChunkCache(chunk.chunkX, chunk.chunkY, data);
+            // チャンクデータに反映
+            chunk.tiles = std::move(data);
+            chunk.loaded = true;
+        }
+    }
 }
