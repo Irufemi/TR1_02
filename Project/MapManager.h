@@ -1,3 +1,5 @@
+#pragma once
+
 #include <Novice.h>
 #include <vector>
 #include <string>
@@ -14,7 +16,6 @@ using TileData = std::vector<std::vector<int>>;
 // ペア<int,int> 用のハッシュ関数
 struct PairHash {
     size_t operator()(const std::pair<int, int>& p) const noexcept {
-        // 上位32bit に first、下位32bit に second を配置
         return (static_cast<size_t>(p.first) << 32) ^ static_cast<unsigned int>(p.second);
     }
 };
@@ -25,18 +26,19 @@ struct MapChunk {
     int chunkY = 0;
     TileData tiles;
     bool loaded = false;
-    std::future<TileData> loaderFuture;  // 非同期読み込み結果
+    std::future<TileData> loaderFuture;
 };
 
 class MapManager {
 public:
-    // コンストラクタ: スプレッドシートID、シート名、APIキー、タイルサイズ、Yオフセット、ビュー距離
+    // コンストラクタ: スプレッドシートID、シート名、APIキー、タイルサイズ、Yオフセット、ビュー距離、キャッシュディレクトリ
     MapManager(const std::string& spreadsheetId,
         const std::string& sheetName,
         const std::string& apiKey,
         int tileSize,
         int yOffset,
-        int viewDistanceChunks = 1);
+        int viewDistanceChunks = 1,
+        const std::string& cacheDir = "cache");
     ~MapManager();
 
     // 初期化（オンラインチェック＋初期チャンク読み込み開始）
@@ -51,9 +53,8 @@ private:
     bool CheckOnlineStatus() const;
     static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp);
 
-    // シートから範囲読み込み（チャンク単位）
+    // シート読み込み／キャッシュI/O
     TileData LoadFromSheet(int cx, int cy) const;
-    // キャッシュ読み書き
     TileData LoadChunkCache(int cx, int cy) const;
     void SaveChunkCache(int cx, int cy, const TileData& data) const;
 
@@ -61,7 +62,7 @@ private:
     void PollLoadedChunks();
     void EnqueueChunkLoad(int cx, int cy);
 
-    // 列番号から Google スプレッドシート形式の列文字列 (A, B, ..., Z, AA, AB, ...)
+    // 列番号からGoogleシート列文字列
     static std::string ColIndexToName(int index);
 
     // メンバ変数
@@ -72,7 +73,7 @@ private:
     int tileSize_;
     int yOffset_;
     int viewDistanceChunks_;
-    // ハッシュ関数 PairHash を使用するように変更
+    std::string cacheDir_;
     std::unordered_map<std::pair<int, int>, MapChunk, PairHash> chunks_;
 
     static constexpr int kChunkWidth = 16;

@@ -7,13 +7,17 @@ MapManager::MapManager(const std::string& spreadsheetId,
     const std::string& apiKey,
     int tileSize,
     int yOffset,
-    int viewDistanceChunks)
+    int viewDistanceChunks,
+    const std::string& cacheDir)
     : spreadsheetId_(spreadsheetId)
     , sheetName_(sheetName)
     , apiKey_(apiKey)
     , tileSize_(tileSize)
     , yOffset_(yOffset)
-    , viewDistanceChunks_(viewDistanceChunks) {
+    , viewDistanceChunks_(viewDistanceChunks)
+    , cacheDir_(cacheDir) {
+    // キャッシュディレクトリを作成
+    std::filesystem::create_directories(cacheDir_);
 }
 
 MapManager::~MapManager() {
@@ -136,17 +140,19 @@ TileData MapManager::LoadFromSheet(int cx, int cy) const {
 
 TileData MapManager::LoadChunkCache(int cx, int cy) const {
     TileData data;
-    std::string filename = "chunk_" + std::to_string(cx) + "_" + std::to_string(cy) + ".json";
-    if (!std::filesystem::exists(filename)) return data;
-    std::ifstream ifs(filename);
+    std::filesystem::path dir(cacheDir_);
+    std::filesystem::path path = dir / ("chunk_" + std::to_string(cx) + "_" + std::to_string(cy) + ".json");
+    if (!std::filesystem::exists(path)) return data;
+    std::ifstream ifs(path);
     json j; ifs >> j;
     data = j.get<TileData>();
     return data;
 }
 
 void MapManager::SaveChunkCache(int cx, int cy, const TileData& data) const {
-    std::string filename = "chunk_" + std::to_string(cx) + "_" + std::to_string(cy) + ".json";
-    std::ofstream ofs(filename);
+    std::filesystem::path dir(cacheDir_);
+    std::filesystem::path path = dir / ("chunk_" + std::to_string(cx) + "_" + std::to_string(cy) + ".json");
+    std::ofstream ofs(path);
     ofs << json(data).dump();
 }
 
@@ -170,17 +176,10 @@ void MapManager::EnqueueChunkLoad(int cx, int cy) {
 void MapManager::PollLoadedChunks() {
     for (auto& kv : chunks_) {
         auto& chunk = kv.second;
-        // 既に読み込み済み、あるいはまだタスクを開始していなければスキップ
         if (chunk.loaded || !chunk.loaderFuture.valid()) continue;
-
-        // 非同期読み込みタスクの完了チェック
-        if (chunk.loaderFuture.wait_for(std::chrono::milliseconds(0))
-            == std::future_status::ready) {
-            // 結果を取り出す
+        if (chunk.loaderFuture.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready) {
             TileData data = chunk.loaderFuture.get();
-            // キャッシュファイルに保存
             SaveChunkCache(chunk.chunkX, chunk.chunkY, data);
-            // チャンクデータに反映
             chunk.tiles = std::move(data);
             chunk.loaded = true;
         }
