@@ -74,6 +74,7 @@ void MapManager::Draw() const {
                 int screenY = (chunk.chunkY * kChunkHeight + y) * tileSize_ + yOffset_;
                 if (tile == 1) Novice::DrawBox(screenX, screenY, tileSize_, tileSize_, 0, BLUE, kFillModeSolid);
                 if (tile == 2) Novice::DrawBox(screenX, screenY, tileSize_, tileSize_, 0, RED, kFillModeSolid);
+                if (tile == 3) Novice::DrawBox(screenX, screenY, tileSize_, tileSize_, 0, GREEN, kFillModeSolid);
             }
         }
     }

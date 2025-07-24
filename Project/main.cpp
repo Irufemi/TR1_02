@@ -18,8 +18,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
     char keys[256] = { 0 };
     char preKeys[256] = { 0 };
 
+    int posX = 20;
+    int posY = 7;
+
+    int offsetX = 0;
+    int offsetY = 0;
+
     const std::string spreadsheetId = "1fL9it6HK4IsAzmViTchDWWG5koE7nbxEfSYKjx6VFM8";
-    const std::string sheetNameRange = "sheet2";
+    const std::string sheetNameRange = "TR1_02";
     const std::string apiKey = "AIzaSyAXQOKxJEPBPtuw8kyp0MZIGsQzhrVBzkc";
 
     MapManager mapMgr(
@@ -30,7 +36,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         30   // Yオフセット
     );
 
-    mapMgr.Initialize(1,1);
+    mapMgr.Initialize(posX, posY);
 
     // ウィンドウの×ボタンが押されるまでループ
     while (Novice::ProcessMessage() == 0) {
@@ -45,7 +51,22 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         /// ↓更新処理ここから
         ///
 
-        mapMgr.Update(keys, preKeys,1,1);
+        if (preKeys[DIK_A] == 0 && keys[DIK_A] != 0) {
+            posX--;
+        }
+        else if (preKeys[DIK_D] == 0 && keys[DIK_D] != 0) {
+            posX++;
+        }
+
+        if (preKeys[DIK_W] == 0 && keys[DIK_W] != 0) {
+            posY--;
+        } else if (preKeys[DIK_S] == 0 && keys[DIK_S] != 0) {
+            posY++;
+        }
+
+        mapMgr.Update(keys, preKeys,posX,posY);
+
+        Novice::ScreenPrintf(10, 30, "%d,%d", posX, posY);
 
         ///
         /// ↑更新処理ここまで

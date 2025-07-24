@@ -76,6 +76,6 @@ private:
     std::string cacheDir_;
     std::unordered_map<std::pair<int, int>, MapChunk, PairHash> chunks_;
 
-    static constexpr int kChunkWidth = 16;
-    static constexpr int kChunkHeight = 16;
+    static constexpr int kChunkWidth = 6;
+    static constexpr int kChunkHeight = 6;
 };
