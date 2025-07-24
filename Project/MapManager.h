@@ -46,7 +46,7 @@ public:
     // 入力処理 (Oキー:オンライン切替, Uキー:チャンク再読み込み)
     void Update(const char keys[256], const char preKeys[256], int playerTileX, int playerTileY);
     // 描画
-    void Draw() const;
+    void Draw(int offsetX, int offsetY) const;
 
 private:
     // ネットワーク

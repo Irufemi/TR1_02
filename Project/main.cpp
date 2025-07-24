@@ -21,9 +21,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
     int posX = 20;
     int posY = 7;
 
-    int offsetX = 0;
-    int offsetY = 0;
-
     const std::string spreadsheetId = "1fL9it6HK4IsAzmViTchDWWG5koE7nbxEfSYKjx6VFM8";
     const std::string sheetNameRange = "TR1_02";
     const std::string apiKey = "AIzaSyAXQOKxJEPBPtuw8kyp0MZIGsQzhrVBzkc";
@@ -37,6 +34,18 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
     );
 
     mapMgr.Initialize(posX, posY);
+
+    // タイルサイズ（MapManager作成時と同じ値）
+    int tileSize = 20;
+
+    // プレイヤーの現在タイル座標: posX, posY
+    // ウィンドウサイズ、または中央座標
+    int screenCenterX = kWindowWidth / 2;
+    int screenCenterY = kWindowHeight / 2;
+
+    // スクロールオフセット（左上の描画原点がどこになるか）
+    int offSetX = posX * tileSize - screenCenterX + tileSize / 2;
+    int offSetY = posY * tileSize - screenCenterY + tileSize / 2;
 
     // ウィンドウの×ボタンが押されるまでループ
     while (Novice::ProcessMessage() == 0) {
@@ -66,7 +75,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
         mapMgr.Update(keys, preKeys,posX,posY);
 
-        Novice::ScreenPrintf(10, 30, "%d,%d", posX, posY);
+        offSetX = posX * tileSize - screenCenterX + tileSize / 2;
+        offSetY = posY * tileSize - screenCenterY + tileSize / 2;
 
         ///
         /// ↑更新処理ここまで
@@ -76,7 +86,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         /// ↓描画処理ここから
         ///
 
-        mapMgr.Draw();
+        mapMgr.Draw(offSetX, offSetY);
+
+        Novice::ScreenPrintf(10, 30, "%d,%d", posX, posY);
+
+        // プレイヤーは常に画面中央に描画
+        Novice::DrawBox(screenCenterX, screenCenterY, tileSize, tileSize, 0, 0xFFFFFFFF, kFillModeSolid);
 
         ///
         /// ↑描画処理ここまで
