@@ -62,7 +62,7 @@ void MapManager::Update(const char keys[256], const char preKeys[256], int playe
     PollLoadedChunks();
 }
 
-void MapManager::Draw() const {
+void MapManager::Draw(int offsetX, int offsetY) const {
     Novice::ScreenPrintf(10, 10, isOnline_ ? "Online" : "Offline");
     for (const auto& kv : chunks_) {
         const auto& chunk = kv.second;
@@ -70,10 +70,13 @@ void MapManager::Draw() const {
         for (int y = 0; y < (int)chunk.tiles.size(); ++y) {
             for (int x = 0; x < (int)chunk.tiles[y].size(); ++x) {
                 int tile = chunk.tiles[y][x];
-                int screenX = (chunk.chunkX * kChunkWidth + x) * tileSize_;
-                int screenY = (chunk.chunkY * kChunkHeight + y) * tileSize_ + yOffset_;
+                int mapTileX = chunk.chunkX * kChunkWidth + x;
+                int mapTileY = chunk.chunkY * kChunkHeight + y;
+                int screenX = mapTileX * tileSize_ - offsetX;
+                int screenY = mapTileY * tileSize_ - offsetY + yOffset_;
                 if (tile == 1) Novice::DrawBox(screenX, screenY, tileSize_, tileSize_, 0, BLUE, kFillModeSolid);
                 if (tile == 2) Novice::DrawBox(screenX, screenY, tileSize_, tileSize_, 0, RED, kFillModeSolid);
+                if (tile == 3) Novice::DrawBox(screenX, screenY, tileSize_, tileSize_, 0, GREEN, kFillModeSolid);
             }
         }
     }
